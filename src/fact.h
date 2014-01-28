@@ -18,7 +18,7 @@ void transformFile(char *file_to_transform);
 
 int buildProductTree (char *moduli_filename);
 
-int buildRemainderTree (int level);
+int buildRemainderTree ();
 
 void iter_threads(int start, int end, void (*func)(int n));
 

@@ -11,5 +11,6 @@ int main(int argc, char *argv[]) {
 	buildProductTree(argv[1]);
 	printf("\nFinally...\n");
 	printFinalProduct();
+	buildRemainderTree ();
 	return 0;
 }

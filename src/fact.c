@@ -16,13 +16,12 @@ typedef struct vec_ {
 	int count;
 } vec_t;
 
-int level = 0;
+int level = 2;
 
 // Initialisation du vecteur
 void init_vec(vec_t *v, int count){
     assert(v);
     v->count = count;
-    printf("dat cout : %d\n ", count);
     v->el = malloc(count * sizeof(mpz_t));
     assert(v->el);
     for (int i=0; i< v->count; i++)
@@ -42,7 +41,7 @@ void input_bin_array(vec_t *v, char * filename){
 	char tmp_out[100];
 	sprintf(tmp_out, "%s%s", DIR, filename);
 	FILE *in = fopen(tmp_out, "rb");
-	printf("output file : %s\n", tmp_out);
+	printf("INPUT file : %s\n", tmp_out);
 	assert(in);
 	int count;
 	int ret = fread(&count, sizeof(count), 1, in);
@@ -50,8 +49,13 @@ void input_bin_array(vec_t *v, char * filename){
 	assert(count >= 0);
 	init_vec(v, count);
 	size_t bytes = 0;
-	for (int i=0; i < count; i++)
+	
+	for (int i=0; i < count; i++){
 		bytes += __mpz_inp_raw(v->el[i], in);
+		
+	}
+		
+		
 	fclose(in);
 }
 
@@ -62,7 +66,7 @@ void output_bin_array(vec_t *v, char *filename) {
 	sprintf(tmp_out, "%s%s", DIR, filename);
 	FILE *out = fopen(tmp_out, "wb");
 	if (out == NULL) {
-		printf("Fichier introuvable\n");
+		printf("output_bin_array  : Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
 	fwrite(&v->count, sizeof(v->count), 1, out);
@@ -76,12 +80,12 @@ void output_bin_array(vec_t *v, char *filename) {
 void transformFile(char *file_to_transform) {
 	FILE *in = fopen(file_to_transform, "r");
 	if (in == NULL) {
-		printf("Fichier introuvable\n");
+		printf("transformFile : Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
 	int count_l = 0;
 	char* fileoutname = (char*) malloc (FILE_NAME * sizeof(char));
-	sprintf(fileoutname, "%s%s_gmp", DIR, file_to_transform);
+	sprintf(fileoutname, "%sPInterm1", DIR);
 
 	FILE *out = fopen(fileoutname, "wb");
 	mpz_t biginteger;
@@ -109,7 +113,11 @@ void transformFile(char *file_to_transform) {
 // Affiche le produit final en clair
 void printFinalProduct() {
 	char tmp[100];
-	sprintf(tmp, "%sPIntern_%d", DIR, level-1);
+	level = level - 1;		// Final
+	sprintf(tmp, "%sPInterm%d", DIR, level);
+	level = level - 1;		// Last intermediate
+	char final[50];
+	sprintf(final, "mv %s %sPFinal", tmp, DIR);
 	printf("Printing : %s\n", tmp);
 	FILE* out2 = fopen(tmp, "rb");
 	int count;
@@ -120,10 +128,12 @@ void printFinalProduct() {
 
 	size_t bytes = 0;
 	bytes = __mpz_inp_raw(bigintegergmp, out2);
-
+	
 	gmp_printf("Final %zu: %Zd\n", bytes, bigintegergmp);
 	mpz_clear(bigintegergmp);
+	printf("Final Level %d\n", level);
 	fclose(out2);
+	system(final);
 }
 
 // Fonction pour l'arbre produit (Attention : le fichier en entrée doit être un fichier clair)
@@ -131,12 +141,12 @@ int buildProductTree (char *moduli_filename) {
 	// Ouverture du fichier
 	FILE* moduli = fopen(moduli_filename, "r");
 	if (moduli == NULL) {
-		printf("Fichier introuvable\n");
+		printf("buildProducTree: Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
 	vec_t v;
 	transformFile(moduli_filename);
-	sprintf(moduli_filename, "%s_gmp", moduli_filename);
+	sprintf(moduli_filename, "PInterm1");
 	input_bin_array(&v, moduli_filename);
 	
 	printf("Starting\n");
@@ -155,7 +165,7 @@ int buildProductTree (char *moduli_filename) {
 			mpz_set(w.el[v.count/2], v.el[v.count-1]); 
 
 		char name[255];
-		snprintf(name, sizeof(name)-1, "PIntern_%d", level);
+		snprintf(name, sizeof(name)-1, "PInterm%d", level);
 		output_bin_array(&w, name);
 
 		//free_vec(&v);
@@ -192,6 +202,122 @@ void iter_threads(int start, int end, void (*func)(int n)) {
 		pthread_join(thread_id[i], NULL);
 }
 
-int buildRemainderTree (int level) {
+int buildRemainderTree () {
+	int secL;
+	int j=0;
+	int k,sizeP; // à modifier, ceci peut se récupérer dans le fichier
+	
+	mpz_t p,v,sol,v2,temp;
+
+	
+	mpz_init(p);
+	mpz_init(v);
+	mpz_init(sol);
+	mpz_init(v2);
+	mpz_init(temp);
+//	mpz_init(gcd);
+	
+	// On charge le premier élément P dans notre liste de previous
+	sizeP=1;
+	vec_t modPre;
+	init_vec(&modPre,sizeP);	
+	input_bin_array(&modPre,"PFinal");
+
+	
+
+	vec_t modCur,prodL,lastLineSquared,gcd;
+	
+	
+	// ETAPE 1 : calcul des modulos
+	// nombre d'éléments de notre array (P puis moduli calculés)
+	secL=level;
+	char str[15]="";
+	
+	
+	printf("LEVEL  : %d DEBUT DE LA DESCENTE\n", level);
+	while (sizeP < 2*level && secL > 0){
+		// Création du vecteur current contenant les modulos calculés
+		sizeP=sizeP*2; 
+		printf("sizeP : %d\n",sizeP);
+		init_vec(&modCur,sizeP);	
+
+	
+		// Création du vecteur prod contenant la ligne des produits correspodant
+		init_vec(&prodL,sizeP);	
+		sprintf(str, "PInterm%d",secL);
+		printf("S :: %s\n",str);
+		input_bin_array(&prodL,str);	
+		printf("str : %s\n", str);
+		j=0;		
+		k=0;
+		
+/*		void mul_job(int j){*/
+		while(j < prodL.count){	
+			// Test pour savoir sur quel P ou resultat de moduli on travaille
+			if(j%2==0&&j!=0){
+				k=k+1;
+			}
+			
+			gmp_printf("V  : %Zd    j=%d \n",prodL.el[j],j);
+			gmp_printf("P  : %Zd  k=%d \n",modPre.el[k],k);
+				// Si le prodL vaut 1 alors on passe à la suivante ou mod précédent = 0
+				if (mpz_cmp_ui(prodL.el[j],1)==0||mpz_cmp_ui(modPre.el[k],0)==0){
+					mpz_set_ui(modCur.el[j],1);
+				}
+				
+				// Sinon
+				else {
+					// Si c'est la dernière étape (Ni)
+					if(sizeP>=level*2) {
+						printf("DERNIER TOUR!");
+						init_vec(&lastLineSquared,prodL.count);	
+						mpz_pow_ui(lastLineSquared.el[j],prodL.el[j],2);
+						mpz_mod(modCur.el[j],modPre.el[k],lastLineSquared.el[j]); // sol = produit mod v			
+					}
+				
+					else{
+						mpz_pow_ui(prodL.el[j],prodL.el[j],2); // v= v^2
+						mpz_mod(modCur.el[j],modPre.el[k],prodL.el[j]); // sol = produit mod v			
+					}
+				}
+		
+			gmp_printf("modCur : %Zd\n", modCur.el[j]); 			
+			j=j+1;			
+		}
+		//iter_threads(0, prodL.count, mul_job);
+		
+		
+		
+		// On assigne tous les éléments de modCur à modPre (on vide modPre avant)
+		free_vec(&modPre);
+		modPre.count = modCur.count;
+		modPre.el = modCur.el;			
+		gmp_printf("P après libération : %Zd size %d \n",modPre.el[0],modPre.count);
+		secL=secL-1;
+	}
+	
+
+	
+	// ETAPE N : div, puis gcd
+	j=0;
+	init_vec(&gcd,modCur.count);
+	
+	void mul_job(int j){
+		mpz_divexact(modCur.el[j],modCur.el[j],prodL.el[j]); // sol = sol / item 
+		gmp_printf("j= %d modCur.el[j] = %Zd\n",j,modCur.el[j]);
+		if(mpz_cmp_ui(modCur.el[j],0)==0 ){
+			mpz_set_ui(gcd.el[j],1);
+		}
+		else{
+			mpz_gcd (gcd.el[j],modCur.el[j],prodL.el[j]); // gcd = pgcd(sol,item)
+		}
+	}
+	iter_threads(0, prodL.count, mul_job);
+	
+	printf("\n\n");
+	for(j=0;j<prodL.count;j++)
+		gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
+	
+
 	return 0;
 }
