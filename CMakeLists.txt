@@ -21,8 +21,4 @@ IF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 SET(OperatingSystem "Mac OS X")
 ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
-
-set (CMAKE_C_COMPILER "g++")
-
 add_subdirectory (src)
-

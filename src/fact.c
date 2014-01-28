@@ -1,41 +1,92 @@
 #include "fact.h"
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
-// Fonction comptant le nombre de lignes d'un fichier
-int countLines (FILE *fp) {
-	if (fp == NULL) {
-		printf("Fichier incorrect\n");
+#define NTHREADS 4
+#define FILE_NAME 25
+#define DIR "output_gmp/"
+#ifdef mpz_raw_64 // if patched gmp, use large format int i/o
+#define __mpz_inp_raw mpz_inp_raw_64
+#define __mpz_out_raw mpz_out_raw_64
+#else // otherwise use normal i/o...beware 2^31 byte size limit
+#define __mpz_inp_raw mpz_inp_raw
+#define __mpz_out_raw mpz_out_raw
+#endif
+
+typedef struct vec_ {
+	mpz_t *el;
+	int count;
+} vec_t;
+
+int level = 0;
+
+// Initialisation du vecteur
+void init_vec(vec_t *v, int count){
+    assert(v);
+    v->count = count;
+    printf("dat cout : %d\n ", count);
+    v->el = malloc(count * sizeof(mpz_t));
+    assert(v->el);
+    for (int i=0; i< v->count; i++)
+        mpz_init(v->el[i]);
+}
+
+// Libération
+void free_vec(vec_t *v){
+    assert(v);
+    for(int i=0; i < v->count ; i++)
+        mpz_clear(v->el[i]);
+    free(v->el);
+}
+
+// Récupération d'un fichier binaire et stockage dans vecteur
+void input_bin_array(vec_t *v, char * filename){
+	char tmp_out[100];
+	sprintf(tmp_out, "%s%s", DIR, filename);
+	FILE *in = fopen(tmp_out, "rb");
+	printf("output file : %s\n", tmp_out);
+	assert(in);
+	int count;
+	int ret = fread(&count, sizeof(count), 1, in);
+	assert(ret == 1);
+	assert(count >= 0);
+	init_vec(v, count);
+	size_t bytes = 0;
+	for (int i=0; i < count; i++)
+		bytes += __mpz_inp_raw(v->el[i], in);
+	fclose(in);
+}
+
+// writes vec_t *v to the named file in binary format
+void output_bin_array(vec_t *v, char *filename) {
+	fprintf(stderr, "writing %s...", filename);
+	char tmp_out[100];
+	sprintf(tmp_out, "%s%s", DIR, filename);
+	FILE *out = fopen(tmp_out, "wb");
+	if (out == NULL) {
+		printf("Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
-	int n = 0, c;
-	printf("Counting Lines...");
-	while ((c = fgetc(fp)) != EOF) {
-		if (c == '\n') {
-			n++;
-		}
-	}
-	printf("Done! -- %d \n", n);
-	fclose(fp);
-	return n;
+	fwrite(&v->count, sizeof(v->count), 1, out);
+	size_t bytes = 0;
+	for (int i=0; i < v->count; i++)
+		bytes += __mpz_out_raw(out, v->el[i]);
+	fclose(out);
 }
 
 // Fonction transformant un fichier texte clair en texte binaire
-void transformFile(char *file_to_transform, char *folder_output) {
+void transformFile(char *file_to_transform) {
 	FILE *in = fopen(file_to_transform, "r");
 	if (in == NULL) {
 		printf("Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
-	char* fileoutname = (char*) malloc ((strlen(folder_output) + strlen(file_to_transform)+5) * sizeof(char));
-	strcpy(fileoutname, folder_output);
-	strcat(fileoutname, file_to_transform);
-	strcat(fileoutname, "_gmp");
+	int count_l = 0;
+	char* fileoutname = (char*) malloc (FILE_NAME * sizeof(char));
+	sprintf(fileoutname, "%s%s_gmp", DIR, file_to_transform);
+
 	FILE *out = fopen(fileoutname, "wb");
 	mpz_t biginteger;
 	mpz_init(biginteger);
-
+	fwrite(&count_l, sizeof(count_l), 1, out);
 	while(1) {
 		int res = gmp_fscanf(in, "%Zd", biginteger);
 		if (res == EOF) {
@@ -44,39 +95,37 @@ void transformFile(char *file_to_transform, char *folder_output) {
 			printf("Erreur de lecture\n");
 			exit(EXIT_FAILURE);
 		} else {
+			count_l++;
 			mpz_out_raw(out, biginteger);	
 		}
 	}
+	mpz_clear(biginteger);
 	fclose(in);
+	rewind(out);
+	fwrite(&count_l, sizeof(count_l), 1, out);
 	fclose(out);
 }
 
-// Fonction ajoutant une ligne supplémentaire dans un fichier d'impaire élément
-void evenFile(char *even_file_name) {
-	FILE *in = fopen(even_file_name, "ab");
-	if (in == NULL) {
-		printf("Fichier introuvable\n");
-		exit(EXIT_FAILURE);
-	}
-	printf("Make File even...");
-	mpz_t one;
-	mpz_init(one);
-	mpz_set_ui(one, 1);
-	mpz_out_raw(in, one);
-	printf("Done!\n");
-	fclose(in);
-}
-
+// Affiche le produit final en clair
 void printFinalProduct() {
-	FILE* out2 = fopen("./fact_output/PFinal", "rb");
+	char tmp[100];
+	sprintf(tmp, "%sPIntern_%d", DIR, level-1);
+	printf("Printing : %s\n", tmp);
+	FILE* out2 = fopen(tmp, "rb");
+	int count;
+	int ret = fread(&count, sizeof(count), 1, out2);
+	assert(ret == 1);
 	mpz_t bigintegergmp;
 	mpz_init(bigintegergmp);
-	
-	mpz_inp_raw(bigintegergmp, out2);
-	gmp_printf("Final : %Zd\n", bigintegergmp);
 
+	size_t bytes = 0;
+	bytes = __mpz_inp_raw(bigintegergmp, out2);
+
+	gmp_printf("Final %zu: %Zd\n", bytes, bigintegergmp);
+	mpz_clear(bigintegergmp);
 	fclose(out2);
 }
+
 // Fonction pour l'arbre produit (Attention : le fichier en entrée doit être un fichier clair)
 int buildProductTree (char *moduli_filename) {
 	// Ouverture du fichier
@@ -85,198 +134,64 @@ int buildProductTree (char *moduli_filename) {
 		printf("Fichier introuvable\n");
 		exit(EXIT_FAILURE);
 	}
-
-	// On compte le nombre de ligne (doit être > 2)
-	int listKeys = countLines(moduli);
-	if (listKeys <= 2) {
-		printf("Votre fichier ne contient pas assez d'éléments\n");
-		return 0;
-	}
-	// Definition du nom du dossier
-	char* folder_output = (char*) malloc (15 * sizeof(char));
-	strcpy(folder_output, "./fact_output/");
-
-	// On génère le fichier _gmp (binaire)
-	transformFile(moduli_filename, folder_output);
-
-	// Nouveau nom fichier _gmp (binaire)
-	char* moduli_filename_gmp = (char*) malloc ((strlen(folder_output) + strlen(moduli_filename) + 5) * sizeof(char));
-	strcpy(moduli_filename_gmp, folder_output);
-	strcat(moduli_filename_gmp, moduli_filename);
-	strcat(moduli_filename_gmp, "_gmp");
-
-	// Rajoute une ligne si liste des clefs impaires
-	if (listKeys % 2 != 0) {
-		printf("Odd Source File...\n");
-		evenFile(moduli_filename_gmp);
-		listKeys += 1;
-	}
-
-	// Nouveau fichier à utiliser : le fichier binaire
-	moduli = fopen(moduli_filename_gmp, "rb");
-	if (moduli == NULL) {
-		printf("Erreur : %s\n", moduli_filename_gmp);
-		exit(EXIT_FAILURE);
-	}
-	// Valeurs récupérant les données deux par deux sur notre fichier en lecture
-	mpz_t val1, val2;
-	mpz_init(val1);
-	mpz_init(val2);
-	// Produit de val1 et val2
-	mpz_t res_product;
-	mpz_init(res_product);
-
-	// Fichier de sortie intermédiaire (au moins un)
-	char* sortie_interm_src = (char*) malloc ((strlen(folder_output) + 10) * sizeof(char));
-	char* sortie_interm = (char*) malloc ((strlen(sortie_interm_src) + 100) * sizeof(char));
-	// Source : Repertoire + nom_fichier_interne
-	strcpy(sortie_interm_src, folder_output);
-	strcat(sortie_interm_src, "PInterm_");
-	// Destination : nom_fichier_interne + level
-	strcpy(sortie_interm, sortie_interm_src);
-	strcat(sortie_interm, "1");
-
-	// Fichier contenant le produit final
-	char* sortie_final= (char*) malloc ((strlen(folder_output) + 10) * sizeof(char));
-	strcpy(sortie_final, folder_output);
-	strcat(sortie_final, "PFinal");
+	vec_t v;
+	transformFile(moduli_filename);
+	sprintf(moduli_filename, "%s_gmp", moduli_filename);
+	input_bin_array(&v, moduli_filename);
 	
-	// Creation premier fichier intermédiaire
-	printf("Creating file %s\n", sortie_interm);
-	FILE* tmp = fopen(sortie_interm, "wb");
-	if (tmp == NULL) {
-		fclose(tmp);
-		printf("Impossible de crée le fichier %s \n", sortie_interm);
-		exit(EXIT_FAILURE);
-	}
-
-	// Level i : Nombre de fichiers
-	// Level 0 : Fichier final
-	int i = 1;
-	char* str_level = (char*) malloc (100 * sizeof(char));
-
-	// taille de données lues
-	size_t raw_val1;
-	size_t raw_val2;
-
-	// Boucle infini
-	printf("Starting...\n");
-	while(1) {
-		printf("Level %d...\n", i);
+	printf("Starting\n");
+	while (v.count > 1) {
 		
-		// On récupère les deux prochaines valeurs du fichier en lecturess
-		mpz_init(val1);
-		mpz_init(val2);
-		raw_val1 = mpz_inp_raw(val1, moduli);
-		raw_val2 = mpz_inp_raw(val2, moduli);
-		
-		// [DEBUG]
-		gmp_printf("Sized val 1: %zu -- %Zd \n", raw_val1, val1);
-		gmp_printf("Sized val 2: %zu -- %Zd \n", raw_val2, val2);
+		fprintf(stderr, "level %d\n", level);
+		vec_t w;
+		init_vec(&w,(v.count+1)/2);
 
-		// [DEBUG]
-		//printf("Test if file is NULL (var1)\n");
-		if (raw_val1 == 0 && raw_val2 == 0) {
-			printf("EOF\n");
-			fclose(moduli);
-			fclose(tmp);
-
-			// Calcule le prochain niveau
-			listKeys = listKeys/2;
-
-			// [DEBUG]
-			//printf("Next level %d\n", listKeys);
-			if (listKeys == 1) {
-				// Nothing else to do, break out of loop
-				break;
-			} else {
-					// Niveau actuel
-					strcpy(str_level, "");
-					sprintf(str_level, "%d", i);
-					// Si fichier intermédiaire impaire
-					if (listKeys % 2 != 0) {
-						// [DEBUG]
-						//printf("Odd File found...\n");
-						strcpy(sortie_interm, "");
-						strcpy(sortie_interm, sortie_interm_src);
-						evenFile(strcat(sortie_interm, str_level));
-						listKeys += 1;
-					}
-
-					// [DEBUG]
-					//printf("Intermediate becomes main...\n");
-					strcpy(sortie_interm, "");
-					strcpy(sortie_interm, sortie_interm_src);
-					strcat(sortie_interm, str_level);
-
-					moduli = fopen(sortie_interm, "rb");
-					if (moduli == NULL) {
-							printf("Erreur ouverture fichier intermédiaire %s\n", sortie_interm);
-							exit(EXIT_FAILURE);
-					}
-
-					// Si dernier fichier intermédiaire (2 lignes restantes)
-					if (listKeys == 2) {
-						// On ouvre le fichier final en écriture
-						printf("Create Final...\n");
-						i = 0;
-						
-						tmp = fopen(sortie_final, "wb");
-						if (tmp == NULL) {
-							printf("Erreur création fichier final\n");
-							exit(EXIT_FAILURE);
-						}
-					} else {
-						// Nouveau fichier intermédiaire avec level + 1
-						i++;
-						printf("Creating new intermediate file : Level %d...\n", i);
-						strcpy(str_level, "");
-						sprintf(str_level, "%d", i);
-						strcpy(sortie_interm, "");
-						strcpy(sortie_interm, sortie_interm_src);
-						strcat(sortie_interm, str_level);
-						printf("Creating file %s\n", sortie_interm);
-						tmp = fopen(sortie_interm, "wb");
-						if (tmp == NULL) {
-							printf("Erreur création intermédiaire\n");
-							exit(EXIT_FAILURE);
-						}
-					}
-			} 
-		} else if (raw_val1 != 0 && raw_val2 == 0) {
-			printf("Erreur Fichier : Check file for \\n \n");
-			exit(EXIT_FAILURE);
-		} else {
-			mpz_mul(val1, val1, val2);
-			mpz_init_set(res_product, val1);
-			mpz_out_raw(tmp, res_product);
+		void mul_job(int i) {
+			mpz_mul(w.el[i], v.el[2*i], v.el[2*i+1]);
 		}
+		printf("Starting\n");
+		iter_threads(0, v.count/2, mul_job);
+		if (v.count & 1)
+			mpz_set(w.el[v.count/2], v.el[v.count-1]); 
+
+		char name[255];
+		snprintf(name, sizeof(name)-1, "PIntern_%d", level);
+		output_bin_array(&w, name);
+
+		//free_vec(&v);
+		v = w;
+		level++;
 	}
 
-	printf("THE END...\n");
-
+	free_vec(&v);	
 	return 0;
 }
 
-void createOutputFolder() {
-	printf("Check folder...");
-	struct stat st = {0};
-	if (stat("./fact_output", &st) == -1) {
-		printf("creating...");
-    	mkdir("./fact_output", 0700);
+void iter_threads(int start, int end, void (*func)(int n)) {
+	int n = start;
+	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	void *thread_body(void *ptr) {
+	while (1) {
+		pthread_mutex_lock(&mutex);
+		int i = n++;
+		pthread_mutex_unlock(&mutex);
+		if (i >= end)
+			break;
+		func(i);
 	}
-	printf("Done!\n");
+
+	return NULL;
+	}
+
+	pthread_t thread_id[NTHREADS];
+	for (int i=0; i < NTHREADS; i++)
+		pthread_create(&thread_id[i], NULL, thread_body, NULL);
+
+	for (int i=0; i < NTHREADS; i++)
+		pthread_join(thread_id[i], NULL);
 }
 
 int buildRemainderTree (int level) {
-	return 0;
-}
-
-int main(int argc, char** argv) {
-	printf("Mainly...\n");
-	createOutputFolder();
-	buildProductTree(argv[1]);
-	printf("Finally...\n");
-	printFinalProduct();
 	return 0;
 }
