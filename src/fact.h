@@ -36,4 +36,6 @@ void init_vec(vec_t *v, int count);
 
 void free_vec(vec_t *v);
 
+double now();
+
 #endif

@@ -1,6 +1,6 @@
 #include "fact.h"
 
-#define NTHREADS 4
+#define NTHREADS 2
 #define FILE_NAME 25
 #define DIR "output_gmp/"
 #ifdef mpz_raw_64 // if patched gmp, use large format int i/o
@@ -11,12 +11,14 @@
 #define __mpz_out_raw mpz_out_raw
 #endif
 
-typedef struct vec_ {
-	mpz_t *el;
-	int count;
-} vec_t;
-
 int level = 2;
+
+double now()
+{
+    struct timeval t;
+    gettimeofday(&t, NULL);
+    return (double) t.tv_sec + (double) t.tv_usec / 1000000.;
+}
 
 // Initialisation du vecteur
 void init_vec(vec_t *v, int count){
@@ -31,8 +33,9 @@ void init_vec(vec_t *v, int count){
 // Libération
 void free_vec(vec_t *v){
     assert(v);
-    for(int i=0; i < v->count ; i++)
+    for(int i=0; i < v->count ; i++) {
         mpz_clear(v->el[i]);
+	}
     free(v->el);
 }
 
@@ -80,7 +83,7 @@ void output_bin_array(vec_t *v, char *filename) {
 void transformFile(char *file_to_transform) {
 	FILE *in = fopen(file_to_transform, "r");
 	if (in == NULL) {
-		printf("transformFile : Fichier introuvable\n");
+		printf("transformFile : Fichier introuvable : %s\n", file_to_transform);
 		exit(EXIT_FAILURE);
 	}
 	int count_l = 0;
@@ -103,10 +106,17 @@ void transformFile(char *file_to_transform) {
 			mpz_out_raw(out, biginteger);	
 		}
 	}
+	int nearest_exp = (int) (ceil(log(count_l)/log(2)));
+	int count_l2 = (int) pow (2., (double) nearest_exp);
+	printf ("Padding with %d ones...\n", count_l2 - count_l);
+	mpz_set_ui (biginteger, 1);
+	for (int i = 0; i < count_l2 - count_l; i++) {
+		mpz_out_raw (out, biginteger);
+	}
 	mpz_clear(biginteger);
 	fclose(in);
 	rewind(out);
-	fwrite(&count_l, sizeof(count_l), 1, out);
+	fwrite(&count_l2, sizeof(count_l2), 1, out);
 	fclose(out);
 }
 
@@ -150,10 +160,11 @@ int buildProductTree (char *moduli_filename) {
 	input_bin_array(&v, moduli_filename);
 	
 	printf("Starting\n");
+	double start = now();
+
 	while (v.count > 1) {
-		
-		fprintf(stderr, "level %d\n", level);
 		vec_t w;
+		fprintf(stderr, "level %d\n", level);
 		init_vec(&w,(v.count+1)/2);
 
 		void mul_job(int i) {
@@ -168,10 +179,11 @@ int buildProductTree (char *moduli_filename) {
 		snprintf(name, sizeof(name)-1, "PInterm%d", level);
 		output_bin_array(&w, name);
 
-		//free_vec(&v);
+		free_vec(&v);
 		v = w;
 		level++;
 	}
+	gmp_printf ("Done. P = %Zd in  %0.10fs\n", v.el[0], now() - start);
 
 	free_vec(&v);	
 	return 0;
@@ -296,7 +308,11 @@ int buildRemainderTree () {
 		secL=secL-1;
 	}
 	
-
+	mpz_clear(p);
+	mpz_clear(v);
+	mpz_clear(sol);
+	mpz_clear(v2);
+	mpz_clear(temp);
 	
 	// ETAPE N : div, puis gcd
 	j=0;
@@ -318,6 +334,10 @@ int buildRemainderTree () {
 	for(j=0;j<prodL.count;j++)
 		gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
 	
+	free_vec (&modCur);
+	free_vec (&prodL);
+	free_vec (&gcd);
+	free_vec (&lastLineSquared);
 
 	return 0;
 }
