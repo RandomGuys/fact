@@ -160,7 +160,7 @@ int buildProductTree (char *moduli_filename) {
 	input_bin_array(&v, moduli_filename);
 	
 	printf("Starting\n");
-	double start = now();
+
 
 	while (v.count > 1) {
 		vec_t w;
@@ -183,7 +183,7 @@ int buildProductTree (char *moduli_filename) {
 		v = w;
 		level++;
 	}
-	gmp_printf ("Done. P = %Zd in  %0.10fs\n", v.el[0], now() - start);
+
 
 	free_vec(&v);	
 	return 0;
@@ -216,128 +216,122 @@ void iter_threads(int start, int end, void (*func)(int n)) {
 
 int buildRemainderTree () {
 	int secL;
-	int j=0;
-	int k,sizeP; // à modifier, ceci peut se récupérer dans le fichier
-	
-	mpz_t p,v,sol,v2,temp;
-
-	
-	mpz_init(p);
-	mpz_init(v);
-	mpz_init(sol);
-	mpz_init(v2);
-	mpz_init(temp);
-//	mpz_init(gcd);
+	int j=0,sizeP=1; // à modifier, ceci peut se récupérer dans le fichier
 	
 	// On charge le premier élément P dans notre liste de previous
-	sizeP=1;
-	vec_t modPre;
-	init_vec(&modPre,sizeP);	
-	input_bin_array(&modPre,"PFinal");
 
-	
 
-	vec_t modCur,prodL,lastLineSquared,gcd;
-	
+	vec_t modCur,gcd,v;
+	vec_t *modPre,*prodL;
+	init_vec(modPre,sizeP);	
+	input_bin_array(modPre,"PFinal");
+
+	printf("LEVEL  : %d DEBUT DE LA DESCENTE\n", level);
 	
 	// ETAPE 1 : calcul des modulos
-	// nombre d'éléments de notre array (P puis moduli calculés)
 	secL=level;
 	char str[15]="";
-	
-	
-	printf("LEVEL  : %d DEBUT DE LA DESCENTE\n", level);
-	while (sizeP < 2*level && secL > 0){
+	do {
 		// Création du vecteur current contenant les modulos calculés
-		sizeP=sizeP*2; 
-		printf("sizeP : %d\n",sizeP);
+		sizeP *= 2; 
 		init_vec(&modCur,sizeP);	
-
 	
-		// Création du vecteur prod contenant la ligne des produits correspodant
+		// Création du vecteur prod contenant la ligne des produits correspodant	
 		init_vec(&prodL,sizeP);	
 		sprintf(str, "PInterm%d",secL);
-		printf("S :: %s\n",str);
 		input_bin_array(&prodL,str);	
-		printf("str : %s\n", str);
-		j=0;		
-		k=0;
-		
-/*		void mul_job(int j){*/
-		while(j < prodL.count){	
-			// Test pour savoir sur quel P ou resultat de moduli on travaille
-			if(j%2==0&&j!=0){
-				k=k+1;
-			}
-			
-			gmp_printf("V  : %Zd    j=%d \n",prodL.el[j],j);
-			gmp_printf("P  : %Zd  k=%d \n",modPre.el[k],k);
-				// Si le prodL vaut 1 alors on passe à la suivante ou mod précédent = 0
-				if (mpz_cmp_ui(prodL.el[j],1)==0||mpz_cmp_ui(modPre.el[k],0)==0){
-					mpz_set_ui(modCur.el[j],1);
-				}
-				
-				// Sinon
-				else {
-					// Si c'est la dernière étape (Ni)
-					if(sizeP>=level*2) {
-						printf("DERNIER TOUR!");
-						init_vec(&lastLineSquared,prodL.count);	
-						mpz_pow_ui(lastLineSquared.el[j],prodL.el[j],2);
-						mpz_mod(modCur.el[j],modPre.el[k],lastLineSquared.el[j]); // sol = produit mod v			
-					}
-				
-					else{
-						mpz_pow_ui(prodL.el[j],prodL.el[j],2); // v= v^2
-						mpz_mod(modCur.el[j],modPre.el[k],prodL.el[j]); // sol = produit mod v			
-					}
-				}
-		
-			gmp_printf("modCur : %Zd\n", modCur.el[j]); 			
-			j=j+1;			
+
+		void mul_job(int j){			
+			mpz_pow_ui(prodL->el[j],prodL->el[j],2); // v= v^2
+			mpz_mod(modCur.el[j],modPre->el[j/2],prodL->el[j]); // sol = produit mod v			
 		}
-		//iter_threads(0, prodL.count, mul_job);
-		
-		
+		iter_threads(0, prodL->count, mul_job);
 		
 		// On assigne tous les éléments de modCur à modPre (on vide modPre avant)
-		free_vec(&modPre);
-		modPre.count = modCur.count;
-		modPre.el = modCur.el;			
-		gmp_printf("P après libération : %Zd size %d \n",modPre.el[0],modPre.count);
-		secL=secL-1;
-	}
-	
-	mpz_clear(p);
-	mpz_clear(v);
-	mpz_clear(sol);
-	mpz_clear(v2);
-	mpz_clear(temp);
+		*modPre = modCur;
+	} while (--secL > 1);
 	
 	// ETAPE N : div, puis gcd
-	j=0;
 	init_vec(&gcd,modCur.count);
-	
+	input_bin_array (&v,"PInterm1");
 	void mul_job(int j){
-		mpz_divexact(modCur.el[j],modCur.el[j],prodL.el[j]); // sol = sol / item 
+		mpz_divexact(modCur.el[j],modCur.el[j],v.el[j]); // sol = sol / item 
 		gmp_printf("j= %d modCur.el[j] = %Zd\n",j,modCur.el[j]);
-		if(mpz_cmp_ui(modCur.el[j],0)==0 ){
-			mpz_set_ui(gcd.el[j],1);
-		}
-		else{
-			mpz_gcd (gcd.el[j],modCur.el[j],prodL.el[j]); // gcd = pgcd(sol,item)
-		}
+		mpz_gcd (gcd.el[j],modCur.el[j],v.el[j]); // gcd = pgcd(sol,item)
 	}
-	iter_threads(0, prodL.count, mul_job);
+	iter_threads(0, v.count, mul_job);
 	
 	printf("\n\n");
-	for(j=0;j<prodL.count;j++)
-		gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
 	
-	free_vec (&modCur);
-	free_vec (&prodL);
+	printf ("Sorting moduli\n");
+
+	vec_t vuln_moduli, prime_gcds;
+	init_vec (&vuln_moduli, v.count);
+	init_vec (&prime_gcds, v.count);
+	int size = 0, size_prime = 0;
+	for(j = 0; j < v.count; j++) {
+		//~ gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
+		if (mpz_cmp_ui (gcd.el[j], 1) != 0) {
+			mpz_set (vuln_moduli.el[size++], v.el[j]);
+			if (mpz_probab_prime_p (gcd.el[j], 25) != 0) {
+				int exist = 0;
+				for (int l = 0; l < size_prime && !exist; l++) {
+					exist = !mpz_cmp (prime_gcds.el[l], gcd.el[j]);
+				}
+				if (!exist) {
+					mpz_set (prime_gcds.el[size_prime++], gcd.el[j]);
+				}
+			}
+		}
+	}
+	vuln_moduli.count = size;
+	prime_gcds.count = size_prime;
+	
+	
+	//~ for (int i = 0; i < vuln_moduli.count; i++) {
+		//~ gmp_printf ("%Zd\t", vuln_moduli.el[i]);
+	//~ }
+	//~ printf ("\n\n");
+	//~ 
+	//~ for (int i = 0; i < prime_gcds.count; i++) {
+		//~ gmp_printf ("%Zd\t", prime_gcds.el[i]);
+	//~ }
+	//~ printf ("\n\n");
+	
+	vec_t *moduli_by_prime;
+	FILE *result = fopen ("output", "w");
+	printf ("Writing output\n");
+	moduli_by_prime = (vec_t *) malloc (prime_gcds.count * sizeof (vec_t));
+	for (int j = 0; j < prime_gcds.count; j++) {
+		init_vec (moduli_by_prime + j, vuln_moduli.count + 1);
+		moduli_by_prime[j].count = 1;
+		mpz_set (moduli_by_prime[j].el[0], prime_gcds.el[j]);
+		gmp_fprintf (result, "%Zd, ", moduli_by_prime[j].el[0]);
+		for (int i = 0; i < vuln_moduli.count; i++) {
+			mpz_t t;
+			mpz_init (t);
+			mpz_gcd (t, vuln_moduli.el[i], prime_gcds.el[j]);
+			if (mpz_cmp_ui (t, 1) != 0) {
+				gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
+				mpz_set (moduli_by_prime[j].el[moduli_by_prime[j].count], vuln_moduli.el[i]);
+				moduli_by_prime[j].count++;
+			}
+			mpz_clear (t);
+		}
+		fprintf (result, "\n");
+	}
+	fclose (result);
+	
+	for (int j = 0; j < prime_gcds.count; j++) {
+		free_vec (moduli_by_prime + j);
+	}
+	free (moduli_by_prime);
+	
 	free_vec (&gcd);
-	free_vec (&lastLineSquared);
+	free_vec (&v);
+
+	printf ("END computeSuperSpeed\n");
+
 
 	return 0;
 }
