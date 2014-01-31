@@ -94,17 +94,19 @@ void transformFile(char *file_to_transform) {
 	mpz_t biginteger;
 	mpz_init(biginteger);
 	fwrite(&count_l, sizeof(count_l), 1, out);
+	int l = 0;
 	while(1) {
-		int res = gmp_fscanf(in, "%Zd", biginteger);
+		int res = gmp_fscanf(in, "%Zx", biginteger);
 		if (res == EOF) {
 			break;
 		} else if (res != 1) {
-			printf("Erreur de lecture\n");
+			printf("Erreur de lecture à la ligne %d\n", l);
 			exit(EXIT_FAILURE);
 		} else {
 			count_l++;
 			mpz_out_raw(out, biginteger);	
 		}
+		l++;
 	}
 	int nearest_exp = (int) (ceil(log(count_l)/log(2)));
 	int count_l2 = (int) pow (2., (double) nearest_exp);

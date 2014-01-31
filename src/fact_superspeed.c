@@ -125,12 +125,13 @@ void computeSuperSpeed (char *input) {
 		prodL = product_tree.levels + secL - 2;
 		void mul_job(int j){			
 			mpz_pow_ui(prodL->el[j],prodL->el[j],2); // v= v^2
-			mpz_mod(modCur.el[j],modPre->el[j/2],prodL->el[j]); // sol = produit mod v			
+			mpz_mod(modCur.el[j],modPre->el[j/2],prodL->el[j]); // sol = produit mod v		
 		}
 		iter_threads(0, prodL->count, mul_job);
 		
 		// On assigne tous les éléments de modCur à modPre (on vide modPre avant)
 		*modPre = modCur;
+		free_vec (prodL);	
 	} while (--secL > 1);
 	printf ("Done in %0.10fs\n", now () - start);
 	
@@ -146,14 +147,14 @@ void computeSuperSpeed (char *input) {
 		mpz_gcd (gcd.el[j],modCur.el[j],v.el[j]); // gcd = pgcd(sol,item)
 	}
 	iter_threads(0, v.count, mul_job);
-	printf ("Done in %0.10fs\n", now () - start);
-	
-	printf ("Freeing tree space...\n");
-	for (int i = 0; i < levels_count; i++) {
-		free_vec (product_tree.levels + i);
-	}
-	free (product_tree.levels);
-	printf ("Done.\n\n");
+	//~ printf ("Done in %0.10fs\n", now () - start);
+	//~ 
+	//~ printf ("Freeing tree space...\n");
+	//~ for (int i = 0; i < levels_count; i++) {
+		//~ free_vec (product_tree.levels + i);
+	//~ }
+	//~ free (product_tree.levels);
+	//~ printf ("Done.\n\n");
 	
 	printf ("Sorting moduli\n");
 	start = now ();
@@ -191,23 +192,16 @@ void computeSuperSpeed (char *input) {
 	//~ }
 	//~ printf ("\n\n");
 	
-	vec_t *moduli_by_prime;
 	FILE *result = fopen ("output", "w");
 	printf ("Writing output\n");
-	moduli_by_prime = (vec_t *) malloc (prime_gcds.count * sizeof (vec_t));
 	for (int j = 0; j < prime_gcds.count; j++) {
-		init_vec (moduli_by_prime + j, vuln_moduli.count + 1);
-		moduli_by_prime[j].count = 1;
-		mpz_set (moduli_by_prime[j].el[0], prime_gcds.el[j]);
-		gmp_fprintf (result, "%Zd, ", moduli_by_prime[j].el[0]);
+		gmp_fprintf (result, "%Zd, ", prime_gcds.el[j]);
 		for (int i = 0; i < vuln_moduli.count; i++) {
 			mpz_t t;
 			mpz_init (t);
 			mpz_gcd (t, vuln_moduli.el[i], prime_gcds.el[j]);
 			if (mpz_cmp_ui (t, 1) != 0) {
 				gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
-				mpz_set (moduli_by_prime[j].el[moduli_by_prime[j].count], vuln_moduli.el[i]);
-				moduli_by_prime[j].count++;
 			}
 			mpz_clear (t);
 		}
@@ -215,11 +209,6 @@ void computeSuperSpeed (char *input) {
 	}
 	printf ("Done in %0.10fs\n", now () - start);
 	fclose (result);
-	
-	for (int j = 0; j < prime_gcds.count; j++) {
-		free_vec (moduli_by_prime + j);
-	}
-	free (moduli_by_prime);
 	
 	free_vec (&gcd);
 	free_vec (&v);
