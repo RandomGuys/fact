@@ -12,6 +12,14 @@
 #include <sys/stat.h>
 #include <gmp.h>
 #include <math.h>
+#include <getopt.h>
+
+#define FILE_NAME 25
+#define DIR "output_gmp/"
+#define MODE_FILES 0
+#define MODE_FULLRAM 1
+#define INPUT_DECIMAL 0
+#define INPUT_HEXA 1
 
 typedef struct vec_ {
 	mpz_t *el;

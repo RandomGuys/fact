@@ -1,0 +1,1 @@
+install(FILES fact.1 DESTINATION "${CMAKE_MAN_DIR}/man1" COMPONENT doc)

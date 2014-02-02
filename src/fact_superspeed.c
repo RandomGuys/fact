@@ -54,7 +54,6 @@ void iter_threads_superspeed (int mode, void (*func)(int n, int m)) {
 }
 
 void computeSuperSpeed (char *input) {
-	printf ("BEGIN computeSuperSpeed (%s)\n", input);
 	vec_t v = {0};
 	// Transform clear text input into gmp binary
 	transformFile(input);
@@ -64,7 +63,6 @@ void computeSuperSpeed (char *input) {
 	int count = v.count;
 	int levels_count = (int) ceil (log (count) / log (2)) + 1;
 	product_tree.levels_count = levels_count;
-	printf ("Levels count = %d\n", levels_count);
 	
 	printf ("Allocating tree space...\n");
 	product_tree.levels = (vec_t *) malloc (levels_count * sizeof (vec_t));
@@ -78,7 +76,7 @@ void computeSuperSpeed (char *input) {
 	}
 	printf ("Done.\n\n");
 	
-	printf("Starting...\n");
+	printf("Building product tree...\n");
 	double start = now ();
 	for (int i = 1; i < levels_count; i++) {
 		vec_t *w = product_tree.levels + i;
@@ -87,16 +85,11 @@ void computeSuperSpeed (char *input) {
 			mpz_mul(w->el[i], v2->el[2*i], v2->el[2*i+1]);
 		}
 		iter_threads(0, v2->count/2, mul_job);
-		//~ printf ("level = %d\t", i);
-		//~ for (int l = 0; l < product_tree.levels[i].count; l++) {
-			//~ gmp_printf ("%Zd, ",product_tree.levels[i].el[l]);
-		//~ }
-		//~ printf ("\n\n");
+
 		if (v2->count & 1)
 			mpz_set(w->el[v2->count/2], v.el[v2->count-1]); 
 
 	}
-	//~ gmp_printf ("Done P = %Zd in %0.10fs\n", product_tree.levels[levels_count -1].el[0], now () - start);
 	printf ("Done in %0.10fs\n", now () - start);
 	
 	
@@ -113,13 +106,12 @@ void computeSuperSpeed (char *input) {
 	
 	secL = product_tree.levels_count;
 	
-	printf("LEVEL  : %d DEBUT DE LA DESCENTE\n", levels_count);
+	printf("Building remainder tree...\n");
 	start = now ();
 	do {
 		// Création du vecteur current contenant les modulos calculés
 		sizeP *= 2; 
 		init_vec(&modCur,sizeP);	
-
 	
 		// Création du vecteur prod contenant la ligne des produits correspodant	
 		prodL = product_tree.levels + secL - 2;
@@ -133,30 +125,22 @@ void computeSuperSpeed (char *input) {
 		*modPre = modCur;
 		free_vec (prodL);	
 	} while (--secL > 1);
-	printf ("Done in %0.10fs\n", now () - start);
 	
-	printf ("Last step\n");
+	
 	start = now ();
 	// ETAPE N : div, puis gcd
 	int j=0;
 	init_vec(&gcd,modCur.count);
+	
 	input_bin_array (&v, moduli_filename);
 	void mul_job(int j){
 		mpz_divexact(modCur.el[j],modCur.el[j],v.el[j]); // sol = sol / item 
-		//~ gmp_printf("j= %d modCur.el[j] = %Zd\n",j,modCur.el[j]);
 		mpz_gcd (gcd.el[j],modCur.el[j],v.el[j]); // gcd = pgcd(sol,item)
 	}
 	iter_threads(0, v.count, mul_job);
-	//~ printf ("Done in %0.10fs\n", now () - start);
-	//~ 
-	//~ printf ("Freeing tree space...\n");
-	//~ for (int i = 0; i < levels_count; i++) {
-		//~ free_vec (product_tree.levels + i);
-	//~ }
-	//~ free (product_tree.levels);
-	//~ printf ("Done.\n\n");
+	printf ("Done in %0.10fs\n", now () - start);
 	
-	printf ("Sorting moduli\n");
+	printf ("Sorting moduli...\n");
 	start = now ();
 	vec_t vuln_moduli, prime_gcds;
 	init_vec (&vuln_moduli, v.count);
@@ -193,7 +177,7 @@ void computeSuperSpeed (char *input) {
 	//~ printf ("\n\n");
 	
 	FILE *result = fopen ("output", "w");
-	printf ("Writing output\n");
+	printf ("Writing output...\n");
 	for (int j = 0; j < prime_gcds.count; j++) {
 		gmp_fprintf (result, "%Zd, ", prime_gcds.el[j]);
 		for (int i = 0; i < vuln_moduli.count; i++) {
@@ -211,8 +195,5 @@ void computeSuperSpeed (char *input) {
 	fclose (result);
 	
 	free_vec (&gcd);
-	free_vec (&v);
-
-	printf ("END computeSuperSpeed\n");
-	
+	free_vec (&v);	
 }

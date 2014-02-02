@@ -1,0 +1,23 @@
+.TH FACT 1
+.SH NAME
+fact \- find common factors of RSA moduli
+.SH SYNOPSIS
+.B fact
+\fB\-m|\-\-moduli\fR \fIINPUT\fR
+\fB\-\-files|\-\-fullram\fR
+[\fB\-\-format\fR \fIhexa|decimal\fR]
+.SH DESCRIPTION
+.B fact
+finds common factors of RSA moduli.
+.SH OPTIONS
+.TP
+.BR \-m ", " \-\-moduli " " \fIINPUT\fR
+Input file containing moduli (one per line) in ASCII text.
+.TP
+.BR \-\-files ", " \-\-fullram
+Use files to store algorithm steps (slow but low RAM comsumption)
+or use full RAM method (very fast but high RAM consumption).
+.TP
+.BR \-\-format " " hexa ", " decimal
+Specify if the input file is formatted in hexadecimal or decimal. 
+Default value: hexa

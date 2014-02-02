@@ -1,15 +1,11 @@
 #include "fact.h"
 
 #define NTHREADS 2
-#define FILE_NAME 25
-#define DIR "output_gmp/"
-#ifdef mpz_raw_64 // if patched gmp, use large format int i/o
-#define __mpz_inp_raw mpz_inp_raw_64
-#define __mpz_out_raw mpz_out_raw_64
-#else // otherwise use normal i/o...beware 2^31 byte size limit
+
 #define __mpz_inp_raw mpz_inp_raw
 #define __mpz_out_raw mpz_out_raw
-#endif
+
+extern int input_type;
 
 int level = 2;
 
@@ -44,7 +40,6 @@ void input_bin_array(vec_t *v, char * filename){
 	char tmp_out[100];
 	sprintf(tmp_out, "%s%s", DIR, filename);
 	FILE *in = fopen(tmp_out, "rb");
-	printf("INPUT file : %s\n", tmp_out);
 	assert(in);
 	int count;
 	int ret = fread(&count, sizeof(count), 1, in);
@@ -64,12 +59,11 @@ void input_bin_array(vec_t *v, char * filename){
 
 // writes vec_t *v to the named file in binary format
 void output_bin_array(vec_t *v, char *filename) {
-	fprintf(stderr, "writing %s...", filename);
 	char tmp_out[100];
 	sprintf(tmp_out, "%s%s", DIR, filename);
 	FILE *out = fopen(tmp_out, "wb");
 	if (out == NULL) {
-		printf("output_bin_array  : Fichier introuvable\n");
+		fprintf(stderr, "This file does not exist: %s\n", tmp_out);
 		exit(EXIT_FAILURE);
 	}
 	fwrite(&v->count, sizeof(v->count), 1, out);
@@ -81,9 +75,13 @@ void output_bin_array(vec_t *v, char *filename) {
 
 // Fonction transformant un fichier texte clair en texte binaire
 void transformFile(char *file_to_transform) {
+	if (input_type != INPUT_DECIMAL && input_type != INPUT_HEXA) {
+		fprintf (stderr, "Input type unknown\n");
+		exit(EXIT_FAILURE);
+	}
 	FILE *in = fopen(file_to_transform, "r");
 	if (in == NULL) {
-		printf("transformFile : Fichier introuvable : %s\n", file_to_transform);
+		fprintf(stderr, "This file does not exist: %s\n", file_to_transform);
 		exit(EXIT_FAILURE);
 	}
 	int count_l = 0;
@@ -96,11 +94,15 @@ void transformFile(char *file_to_transform) {
 	fwrite(&count_l, sizeof(count_l), 1, out);
 	int l = 0;
 	while(1) {
-		int res = gmp_fscanf(in, "%Zx", biginteger);
+		int res = -1;
+		if (input_type == INPUT_HEXA)
+			res = gmp_fscanf(in, "%Zx", biginteger);
+		else if (input_type == INPUT_DECIMAL)
+			res = gmp_fscanf(in, "%Zd", biginteger);
 		if (res == EOF) {
 			break;
 		} else if (res != 1) {
-			printf("Erreur de lecture à la ligne %d\n", l);
+			fprintf(stderr, "Failed to read line #%d\n", l);
 			exit(EXIT_FAILURE);
 		} else {
 			count_l++;
@@ -130,7 +132,6 @@ void printFinalProduct() {
 	level = level - 1;		// Last intermediate
 	char final[50];
 	sprintf(final, "mv %s %sPFinal", tmp, DIR);
-	printf("Printing : %s\n", tmp);
 	FILE* out2 = fopen(tmp, "rb");
 	int count;
 	int ret = fread(&count, sizeof(count), 1, out2);
@@ -138,12 +139,9 @@ void printFinalProduct() {
 	mpz_t bigintegergmp;
 	mpz_init(bigintegergmp);
 
-	size_t bytes = 0;
-	bytes = __mpz_inp_raw(bigintegergmp, out2);
+	__mpz_inp_raw(bigintegergmp, out2);
 	
-	gmp_printf("Final %zu: %Zd\n", bytes, bigintegergmp);
 	mpz_clear(bigintegergmp);
-	printf("Final Level %d\n", level);
 	fclose(out2);
 	system(final);
 }
@@ -161,18 +159,15 @@ int buildProductTree (char *moduli_filename) {
 	sprintf(moduli_filename, "PInterm1");
 	input_bin_array(&v, moduli_filename);
 	
-	printf("Starting\n");
-
-
+	printf("Building product tree...\n");
+	int start = now ();
 	while (v.count > 1) {
 		vec_t w;
-		fprintf(stderr, "level %d\n", level);
 		init_vec(&w,(v.count+1)/2);
 
 		void mul_job(int i) {
 			mpz_mul(w.el[i], v.el[2*i], v.el[2*i+1]);
 		}
-		printf("Starting\n");
 		iter_threads(0, v.count/2, mul_job);
 		if (v.count & 1)
 			mpz_set(w.el[v.count/2], v.el[v.count-1]); 
@@ -185,6 +180,7 @@ int buildProductTree (char *moduli_filename) {
 		v = w;
 		level++;
 	}
+	printf ("Done in %0.10fs\n", now () - start);
 
 
 	free_vec(&v);	
@@ -224,15 +220,15 @@ int buildRemainderTree () {
 
 
 	vec_t modCur,gcd,v;
-	vec_t *modPre,*prodL;
-	init_vec(modPre,sizeP);	
-	input_bin_array(modPre,"PFinal");
-
-	printf("LEVEL  : %d DEBUT DE LA DESCENTE\n", level);
+	vec_t modPre,prodL;
+	init_vec(&modPre,sizeP);	
+	input_bin_array(&modPre,"PFinal");
 	
 	// ETAPE 1 : calcul des modulos
-	secL=level;
+	secL=level + 1;
 	char str[15]="";
+	printf("Building remainder tree...\n");
+	int start = now ();
 	do {
 		// Création du vecteur current contenant les modulos calculés
 		sizeP *= 2; 
@@ -240,33 +236,34 @@ int buildRemainderTree () {
 	
 		// Création du vecteur prod contenant la ligne des produits correspodant	
 		init_vec(&prodL,sizeP);	
-		sprintf(str, "PInterm%d",secL);
+		sprintf(str, "PInterm%d",secL - 1);
 		input_bin_array(&prodL,str);	
 
 		void mul_job(int j){			
-			mpz_pow_ui(prodL->el[j],prodL->el[j],2); // v= v^2
-			mpz_mod(modCur.el[j],modPre->el[j/2],prodL->el[j]); // sol = produit mod v			
+			mpz_pow_ui(prodL.el[j],prodL.el[j],2); // v= v^2
+			mpz_mod(modCur.el[j],modPre.el[j/2],prodL.el[j]); // sol = produit mod v			
 		}
-		iter_threads(0, prodL->count, mul_job);
+		iter_threads(0, prodL.count, mul_job);
 		
 		// On assigne tous les éléments de modCur à modPre (on vide modPre avant)
-		*modPre = modCur;
+		modPre = modCur;
+		free_vec (&prodL);
 	} while (--secL > 1);
 	
 	// ETAPE N : div, puis gcd
 	init_vec(&gcd,modCur.count);
+	
 	input_bin_array (&v,"PInterm1");
 	void mul_job(int j){
 		mpz_divexact(modCur.el[j],modCur.el[j],v.el[j]); // sol = sol / item 
-		gmp_printf("j= %d modCur.el[j] = %Zd\n",j,modCur.el[j]);
 		mpz_gcd (gcd.el[j],modCur.el[j],v.el[j]); // gcd = pgcd(sol,item)
 	}
 	iter_threads(0, v.count, mul_job);
 	
-	printf("\n\n");
+	printf ("Done in %0.10fs\n", now () - start);
 	
-	printf ("Sorting moduli\n");
-
+	printf ("Sorting moduli...\n");
+	start = now ();
 	vec_t vuln_moduli, prime_gcds;
 	init_vec (&vuln_moduli, v.count);
 	init_vec (&prime_gcds, v.count);
@@ -286,23 +283,14 @@ int buildRemainderTree () {
 			}
 		}
 	}
+	printf ("Done in %0.10fs\n", now () - start);
 	vuln_moduli.count = size;
 	prime_gcds.count = size_prime;
 	
-	
-	//~ for (int i = 0; i < vuln_moduli.count; i++) {
-		//~ gmp_printf ("%Zd\t", vuln_moduli.el[i]);
-	//~ }
-	//~ printf ("\n\n");
-	//~ 
-	//~ for (int i = 0; i < prime_gcds.count; i++) {
-		//~ gmp_printf ("%Zd\t", prime_gcds.el[i]);
-	//~ }
-	//~ printf ("\n\n");
-	
 	vec_t *moduli_by_prime;
 	FILE *result = fopen ("output", "w");
-	printf ("Writing output\n");
+	printf ("Writing output...\n");
+	start = now ();
 	moduli_by_prime = (vec_t *) malloc (prime_gcds.count * sizeof (vec_t));
 	for (int j = 0; j < prime_gcds.count; j++) {
 		init_vec (moduli_by_prime + j, vuln_moduli.count + 1);
@@ -323,6 +311,7 @@ int buildRemainderTree () {
 		fprintf (result, "\n");
 	}
 	fclose (result);
+	printf ("Done in %0.10fs\n", now () - start);
 	
 	for (int j = 0; j < prime_gcds.count; j++) {
 		free_vec (moduli_by_prime + j);
@@ -331,9 +320,6 @@ int buildRemainderTree () {
 	
 	free_vec (&gcd);
 	free_vec (&v);
-
-	printf ("END computeSuperSpeed\n");
-
 
 	return 0;
 }
