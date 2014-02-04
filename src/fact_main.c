@@ -27,11 +27,11 @@ int main(int argc, char *argv[]) {
 			filename = optarg;
 			break;
 	   case 'f':
-			if (strcmp (optarg, "hexa") == 0) 
-				input_type = INPUT_HEXA;
-			else if (strcmp (optarg, "decimal") == 0) 
+			if (strcmp (optarg, "decimal") == 0) {
+				printf ("decimal\n");
 				input_type = INPUT_DECIMAL;
-			else {
+				printf ("input format set\n");
+			} else {
 				fprintf (stderr, "Unknown input format: %s\n", optarg);
 				exit (EXIT_FAILURE);
 			}

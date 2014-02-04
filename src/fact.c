@@ -268,10 +268,15 @@ int buildRemainderTree () {
 	init_vec (&vuln_moduli, v.count);
 	init_vec (&prime_gcds, v.count);
 	int size = 0, size_prime = 0;
+	FILE *vuln_output = fopen ("vuln_moduli", "w");
 	for(j = 0; j < v.count; j++) {
 		//~ gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
 		if (mpz_cmp_ui (gcd.el[j], 1) != 0) {
 			mpz_set (vuln_moduli.el[size++], v.el[j]);
+			if (input_type == INPUT_DECIMAL) 
+				gmp_fprintf (vuln_output, "%Zd\n", vuln_moduli.el[j]);
+			else
+				gmp_fprintf (vuln_output, "%ZX\n", vuln_moduli.el[j]);
 			if (mpz_probab_prime_p (gcd.el[j], 25) != 0) {
 				int exist = 0;
 				for (int l = 0; l < size_prime && !exist; l++) {
@@ -283,12 +288,14 @@ int buildRemainderTree () {
 			}
 		}
 	}
+	fclose (vuln_output);
 	printf ("Done in %0.10fs\n", now () - start);
 	vuln_moduli.count = size;
 	prime_gcds.count = size_prime;
 	
 	vec_t *moduli_by_prime;
 	FILE *result = fopen ("output", "w");
+	
 	printf ("Writing output...\n");
 	start = now ();
 	moduli_by_prime = (vec_t *) malloc (prime_gcds.count * sizeof (vec_t));
@@ -302,7 +309,10 @@ int buildRemainderTree () {
 			mpz_init (t);
 			mpz_gcd (t, vuln_moduli.el[i], prime_gcds.el[j]);
 			if (mpz_cmp_ui (t, 1) != 0) {
-				gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
+				if (input_type == INPUT_DECIMAL) 
+					gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
+				else
+					gmp_fprintf (result, "%ZX, ", vuln_moduli.el[i]);
 				mpz_set (moduli_by_prime[j].el[moduli_by_prime[j].count], vuln_moduli.el[i]);
 				moduli_by_prime[j].count++;
 			}
@@ -311,6 +321,7 @@ int buildRemainderTree () {
 		fprintf (result, "\n");
 	}
 	fclose (result);
+	
 	printf ("Done in %0.10fs\n", now () - start);
 	
 	for (int j = 0; j < prime_gcds.count; j++) {

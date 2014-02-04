@@ -11,6 +11,8 @@ typedef struct tree_ {
 
 tree_t product_tree = {0};
 
+extern int input_type;
+
 void iter_threads_superspeed (int mode, void (*func)(int n, int m)) {
 	int n = 0;
 	int m = 1;
@@ -126,8 +128,7 @@ void computeSuperSpeed (char *input) {
 		free_vec (prodL);	
 	} while (--secL > 1);
 	
-	
-	start = now ();
+
 	// ETAPE N : div, puis gcd
 	int j=0;
 	init_vec(&gcd,modCur.count);
@@ -146,53 +147,77 @@ void computeSuperSpeed (char *input) {
 	init_vec (&vuln_moduli, v.count);
 	init_vec (&prime_gcds, v.count);
 	int size = 0, size_prime = 0;
+	FILE *vuln_output = fopen ("vuln_moduli", "w");
 	for(j = 0; j < v.count; j++) {
 		//~ gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
 		if (mpz_cmp_ui (gcd.el[j], 1) != 0) {
-			mpz_set (vuln_moduli.el[size++], v.el[j]);
-			if (mpz_probab_prime_p (gcd.el[j], 25) != 0) {
-				int exist = 0;
-				for (int l = 0; l < size_prime && !exist; l++) {
-					exist = !mpz_cmp (prime_gcds.el[l], gcd.el[j]);
-				}
-				if (!exist) {
-					mpz_set (prime_gcds.el[size_prime++], gcd.el[j]);
+			if (mpz_cmp (v.el[j], gcd.el[j]) != 0) {
+				mpz_set (vuln_moduli.el[size++], v.el[j]);
+				if (input_type == INPUT_DECIMAL) 
+					gmp_fprintf (vuln_output, "%Zd\n", vuln_moduli.el[size - 1]);
+				else
+					gmp_fprintf (vuln_output, "%ZX\n", vuln_moduli.el[size - 1]);
+				if (mpz_probab_prime_p (gcd.el[j], 25) != 0) {
+					int exist = 0;
+					for (int l = 0; l < size_prime && !exist; l++) {
+						exist = !mpz_cmp (prime_gcds.el[l], gcd.el[j]);
+					}
+					if (!exist) {
+						mpz_set (prime_gcds.el[size_prime++], gcd.el[j]);
+					}
 				}
 			}
 		}
 	}
+	fclose (vuln_output);
 	vuln_moduli.count = size;
 	prime_gcds.count = size_prime;
 	
 	printf ("Done in %0.10fs\n", now () - start);
-	
-	//~ for (int i = 0; i < vuln_moduli.count; i++) {
-		//~ gmp_printf ("%Zd\t", vuln_moduli.el[i]);
-	//~ }
-	//~ printf ("\n\n");
-	//~ 
-	//~ for (int i = 0; i < prime_gcds.count; i++) {
-		//~ gmp_printf ("%Zd\t", prime_gcds.el[i]);
-	//~ }
-	//~ printf ("\n\n");
-	
+
 	FILE *result = fopen ("output", "w");
+	FILE *stats = fopen ("stats", "w");
+	FILE *snd_primes = fopen ("output_second_primes", "w");
 	printf ("Writing output...\n");
+	mpz_t t;
+	mpz_init (t);
 	for (int j = 0; j < prime_gcds.count; j++) {
-		gmp_fprintf (result, "%Zd, ", prime_gcds.el[j]);
+		if (input_type == INPUT_DECIMAL) 
+			gmp_fprintf (result, "%Zd, ", prime_gcds.el[j]);
+		else
+			gmp_fprintf (result, "%ZX, ", prime_gcds.el[j]);
+		int moduli_count = 0;
 		for (int i = 0; i < vuln_moduli.count; i++) {
-			mpz_t t;
-			mpz_init (t);
 			mpz_gcd (t, vuln_moduli.el[i], prime_gcds.el[j]);
 			if (mpz_cmp_ui (t, 1) != 0) {
-				gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
+				// Adding the 2nd prime if not already in prime_gcds
+				mpz_divexact (t, vuln_moduli.el[i], prime_gcds.el[j]);
+				int l = j + 1;
+				while (mpz_cmp (t, prime_gcds.el[l++]) == 0 && l < prime_gcds.count);
+				if (l != prime_gcds.count) {
+					if (input_type == INPUT_DECIMAL) 
+						gmp_fprintf (snd_primes, "%Zd, %Zd\n", t, vuln_moduli.el[i]);
+					else
+						gmp_fprintf (snd_primes, "%ZX, %ZX\n", t, vuln_moduli.el[i]);
+				}
+				moduli_count++;
+				if (input_type == INPUT_DECIMAL) 
+					gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
+				else
+					gmp_fprintf (result, "%ZX, ", vuln_moduli.el[i]);
 			}
-			mpz_clear (t);
 		}
 		fprintf (result, "\n");
+		if (input_type == INPUT_DECIMAL) 
+			gmp_fprintf (stats, "Prime: %Zd in %d moduli\n", prime_gcds.el[j], moduli_count);
+		else
+			gmp_fprintf (stats, "Prime: %ZX	 in %d moduli\n", prime_gcds.el[j], moduli_count);
 	}
+	mpz_clear (t);
 	printf ("Done in %0.10fs\n", now () - start);
 	fclose (result);
+	fclose (stats);
+	fclose (snd_primes);
 	
 	free_vec (&gcd);
 	free_vec (&v);	
