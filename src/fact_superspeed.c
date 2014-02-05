@@ -130,7 +130,6 @@ void computeSuperSpeed (char *input) {
 	
 
 	// ETAPE N : div, puis gcd
-	int j=0;
 	init_vec(&gcd,modCur.count);
 	
 	input_bin_array (&v, moduli_filename);
@@ -141,84 +140,49 @@ void computeSuperSpeed (char *input) {
 	iter_threads(0, v.count, mul_job);
 	printf ("Done in %0.10fs\n", now () - start);
 	
-	printf ("Sorting moduli...\n");
+	
+	vec_t potentielVuln, premiers;
+	init_vec (&potentielVuln, gcd.count);
+	init_vec (&premiers, gcd.count);
+	mpz_t q;
+	mpz_init (q);
+	
+	int pvuln = 0, ppremier = 0;
+	printf ("Identification des premiers et potentiels moduli vulnérables...\n");
 	start = now ();
-	vec_t vuln_moduli, prime_gcds;
-	init_vec (&vuln_moduli, v.count);
-	init_vec (&prime_gcds, v.count);
-	int size = 0, size_prime = 0;
-	FILE *vuln_output = fopen ("vuln_moduli", "w");
-	for(j = 0; j < v.count; j++) {
-		//~ gmp_printf("j= %d  : PGCD=%Zd \n\n",j,gcd.el[j]);
-		if (mpz_cmp_ui (gcd.el[j], 1) != 0) {
-			if (mpz_cmp (v.el[j], gcd.el[j]) != 0) {
-				mpz_set (vuln_moduli.el[size++], v.el[j]);
-				if (input_type == INPUT_DECIMAL) 
-					gmp_fprintf (vuln_output, "%Zd\n", vuln_moduli.el[size - 1]);
-				else
-					gmp_fprintf (vuln_output, "%ZX\n", vuln_moduli.el[size - 1]);
-				if (mpz_probab_prime_p (gcd.el[j], 25) != 0) {
-					int exist = 0;
-					for (int l = 0; l < size_prime && !exist; l++) {
-						exist = !mpz_cmp (prime_gcds.el[l], gcd.el[j]);
-					}
-					if (!exist) {
-						mpz_set (prime_gcds.el[size_prime++], gcd.el[j]);
-					}
-				}
+	for (int i = 0; i < gcd.count; i++) {
+		if (mpz_cmp_ui (gcd.el[i], 1) != 0) {
+			mpz_set (potentielVuln.el[pvuln++], v.el[i]);
+			if (mpz_probab_prime_p (gcd.el[i], 25) != 0) {
+				mpz_set (premiers.el[ppremier++], gcd.el[i]);
 			}
 		}
 	}
-	fclose (vuln_output);
-	vuln_moduli.count = size;
-	prime_gcds.count = size_prime;
-	
 	printf ("Done in %0.10fs\n", now () - start);
-
-	FILE *result = fopen ("output", "w");
-	FILE *stats = fopen ("stats", "w");
-	FILE *snd_primes = fopen ("output_second_primes", "w");
-	printf ("Writing output...\n");
-	mpz_t t;
-	mpz_init (t);
-	for (int j = 0; j < prime_gcds.count; j++) {
-		if (input_type == INPUT_DECIMAL) 
-			gmp_fprintf (result, "%Zd, ", prime_gcds.el[j]);
-		else
-			gmp_fprintf (result, "%ZX, ", prime_gcds.el[j]);
-		int moduli_count = 0;
-		for (int i = 0; i < vuln_moduli.count; i++) {
-			mpz_gcd (t, vuln_moduli.el[i], prime_gcds.el[j]);
-			if (mpz_cmp_ui (t, 1) != 0) {
-				// Adding the 2nd prime if not already in prime_gcds
-				mpz_divexact (t, vuln_moduli.el[i], prime_gcds.el[j]);
-				int l = j + 1;
-				while (mpz_cmp (t, prime_gcds.el[l++]) == 0 && l < prime_gcds.count);
-				if (l != prime_gcds.count) {
-					if (input_type == INPUT_DECIMAL) 
-						gmp_fprintf (snd_primes, "%Zd, %Zd\n", t, vuln_moduli.el[i]);
+	potentielVuln.count = pvuln;
+	premiers.count = ppremier;
+	
+	printf ("Identification des moduli vulnérables...\n");
+	FILE *result = fopen ("moduli_p_q", "w");
+	start = now ();
+	for (int i = 0; i < potentielVuln.count; i++) {
+		for (int j = 0; j < premiers.count; j++) {
+			if (mpz_divisible_p (potentielVuln.el[i], premiers.el[j]) != 0) {
+				mpz_divexact (q, potentielVuln.el[i], premiers.el[j]);
+				if (mpz_probab_prime_p (q, 25) != 0) {
+					if (input_type == INPUT_HEXA) 
+						gmp_fprintf (result, "%ZX, %ZX, %ZX\n", potentielVuln.el[i], premiers.el[j], q);
 					else
-						gmp_fprintf (snd_primes, "%ZX, %ZX\n", t, vuln_moduli.el[i]);
+						gmp_fprintf (result, "%Zd, %Zd, %Zd\n", potentielVuln.el[i], premiers.el[j], q);
 				}
-				moduli_count++;
-				if (input_type == INPUT_DECIMAL) 
-					gmp_fprintf (result, "%Zd, ", vuln_moduli.el[i]);
-				else
-					gmp_fprintf (result, "%ZX, ", vuln_moduli.el[i]);
 			}
 		}
-		fprintf (result, "\n");
-		if (input_type == INPUT_DECIMAL) 
-			gmp_fprintf (stats, "Prime: %Zd in %d moduli\n", prime_gcds.el[j], moduli_count);
-		else
-			gmp_fprintf (stats, "Prime: %ZX	 in %d moduli\n", prime_gcds.el[j], moduli_count);
 	}
-	mpz_clear (t);
 	printf ("Done in %0.10fs\n", now () - start);
+	free_vec (&potentielVuln);
+	free_vec (&premiers);
 	fclose (result);
-	fclose (stats);
-	fclose (snd_primes);
-	
+
 	free_vec (&gcd);
 	free_vec (&v);	
 }

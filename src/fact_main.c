@@ -45,12 +45,12 @@ int main(int argc, char *argv[]) {
 		fprintf (stderr, "Usage: %s -m|--moduli inputfile --files|--fullram  [--format hexa|decimal]\n", argv[0]);
 		exit (EXIT_FAILURE);
 	}
+	struct stat st = {0};
+	if(stat("output_gmp", &st) != 0) {
+		mkdir("output_gmp", 0700);
+	}
 
-	if (mode == MODE_FILES) {
-		struct stat st = {0};
-		if(stat("output_gmp", &st) != 0) {
-			mkdir("output_gmp", 0700);
-		}
+	if (mode == MODE_FILES) {		
 		buildProductTree(filename);
 		printFinalProduct();
 		buildRemainderTree ();
