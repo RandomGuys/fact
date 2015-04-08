@@ -111,6 +111,8 @@ void computeSuperSpeed (char *input) {
 	printf("Building remainder tree...\n");
 	start = now ();
 	do {
+		printf("Computing level %d...", secL);
+		double start_level = now();
 		// Création du vecteur current contenant les modulos calculés
 		sizeP *= 2; 
 		init_vec(&modCur,sizeP);	
@@ -125,7 +127,8 @@ void computeSuperSpeed (char *input) {
 		
 		// On assigne tous les éléments de modCur à modPre (on vide modPre avant)
 		*modPre = modCur;
-		free_vec (prodL);	
+		free_vec (prodL);
+		printf (" done in %0.10fs\n", now() - start_level);
 	} while (--secL > 1);
 	
 
